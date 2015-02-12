@@ -40,12 +40,19 @@ if (version_compare(PHP_VERSION, '5.0.0', '<')) {
 } else {
   include(WP_PLUGIN_DIR .'/wpbook/includes/wpbook_cron.php');
 }
+ 
+$nonce = $_REQUEST['wpbook-nonce'];
+if(function_exists('wp_verify_nonce'))
+{
+ wp_verify_nonce($nonce,'wpbook-nonce');
+}
 
 // this function checks for admin pages
 if (!function_exists('is_admin_page')) {
   function is_admin_page() {
-    if (function_exists('is_admin')) {
-      return is_admin();
+    if (current_user_can('manage_options')) { // making sure we are actually an admin. 
+      return current_user_can('manage_options');
+	  			
     }
 		if (function_exists('check_admin_referer')) {
 			return true;
@@ -83,6 +90,7 @@ function is_authorized() {
 
 function wpbook_getAdminOptions() {
 	$wpbookOptions = get_option('wpbookAdminOptions');
+	
 	if (!empty($wpbookOptions)) {
 		foreach ($wpbookOptions as $key => $option)
 			$wpbookAdminOptions[$key] = $option;
@@ -181,6 +189,7 @@ function wpbook_admin_head() {
 //function to list pages to exclude taken from List Pages Plus
 function wpbook_exclude_Page(){
   global $wpdb;
+  
   $wpbookAdminOptions = wpbook_getAdminOptions();
   $pages = $wpdb->get_results( "SELECT ID, post_title FROM $wpdb->posts WHERE post_type='page' ORDER BY post_parent, menu_order, post_title ASC" );
   $select = $wpbookAdminOptions['exclude_pages'];
@@ -208,12 +217,19 @@ function wpbook_subpanel() {
 		$wpbookAdminOptions = wpbook_getAdminOptions();
 
 		// if we're posting
-		if ( ! empty( $_POST ) && check_admin_referer( 'update_settings', 'wpbook_admin_nonce') 
+       		if (empty( $_POST )  && (empty($_POST['fb_api_key']))  
+				&& (empty($_POST['fb_secret'])) && (empty($_POST['fb_app_url'])) 
+				&& (empty($_POST['fb_admin_target'])))
+		{
+		check_admin_referer( 'update_settings', 'wpbook-nonce');
+		}
+		if ( ! empty( $_POST )  
 				&& isset($_POST['fb_api_key']) && isset($_POST['fb_secret']) && isset($_POST['fb_app_url']) 
 				&& isset($_POST['fb_admin_target']) && (!empty($_POST['fb_api_key']))  
 				&& (!empty($_POST['fb_secret'])) && (!empty($_POST['fb_app_url'])) 
 				&& (!empty($_POST['fb_admin_target']))) {
-			$fb_api_key = preg_replace("#[^0-9]#", "",$_POST['fb_api_key']);
+				check_admin_referer( 'update_settings', 'wpbook-nonce');
+				$fb_api_key = preg_replace("#[^0-9]#", "",$_POST['fb_api_key']);
 			$fb_secret = $_POST['fb_secret'];
 			$fb_app_url = $_POST['fb_app_url'];
 			$fb_admin_target = preg_replace("#[^0-9]#", "",$_POST['fb_admin_target']);
@@ -465,9 +481,12 @@ function wpbook_subpanel() {
 			$flash = "Your settings have been saved. ";
 		} elseif (($wpbookAdminOptions['fb_api_key'] != "") && ($wpbookAdminOptions['fb_secret'] != "") && ($wpbookAdminOptions['fb_app_url'] != "")  && ($wpbookAdminOptions['fb_admin_target'] != "")){
 			$flash = "";
-		} elseif (! check_admin_referer( 'update_settings', 'wpbook_admin_nonce') ) {
+			
+		} /* elseif (! check_admin_referer( 'update_settings', 'wpbook-nonce') ) {
 			$flash = "Admin nonce failed"; 
-		} else {
+		} 
+		*/
+	else {
 			$flash = "Please complete all necessary fields";
 		} // end of posting complete
 	} else {
@@ -526,7 +545,8 @@ function wpbook_subpanel() {
 					<p>Note: Your "Canvas Callback URL" setting in Facebook should be:
 			<?php
 				echo '<code>' . get_bloginfo('url') . '</code></p>';
-				echo '<form action="'. $_SERVER["REQUEST_URI"] .'" method="post">';
+				echo '<form action="'. esc_url($_SERVER["REQUEST_URI"]) .'" method="post">';
+			    echo wp_nonce_field('wpbook-nonce');
 				echo '<p>Facebook App ID: <input type="text" name="fb_api_key" value="';
 				echo htmlentities($wpbookAdminOptions['fb_api_key']) .'" size="35" />';
 				if(!empty($wpbookAdminOptions['fb_api_key'])) {
@@ -933,7 +953,7 @@ function wpbook_subpanel() {
 			</div> <!-- END App View Options -->
 
 			<?php
-			wp_nonce_field( 'update_settings', 'wpbook_admin_nonce' );
+			wp_nonce_field( 'update_settings', 'wpbook-nonce' );
 			echo '<p><input type="submit" value="Save" class="button-primary"';
 			echo ' name="wpbook_save_button" /></form></p>';
 			echo'<div id="help">';
@@ -952,7 +972,8 @@ function wpbook_subpanel() {
 		// http://mtdewvirus.com/code/wordpress-plugins/ v. 1.07
 // by Nick Momrik, http://mtdewvirus.com/
 	function wp_recent_posts($count = 5, $before = '<li>', $after = '</li>',
-      $hide_pass_post = true, $skip_posts = 0, $show_excerpts = false,
+      
+	  $hide_pass_post = true, $skip_posts = 0, $show_excerpts = false,
       $where = '', $join = '', $groupby = '') {
 		global $wpdb;
 		$time_difference = get_settings('gmt_offset');
@@ -999,7 +1020,6 @@ function wpbook_profile_recent_posts($count = 5, $before = '<li>', $after = '</l
                         $where = '', $join = '', $groupby = '') {
   global $wpdb;
   $my_options = wpbook_getAdminOptions();
-
   $time_difference = get_settings('gmt_offset');
   $now = gmdate("Y-m-d H:i:s",time());
   $join = apply_filters('posts_join', $join);
@@ -1268,6 +1288,7 @@ function wpbook_meta_box() {
 	if ($wpbook_publish == '') {
 		$wpbook_publish = 'yes';
 	}
+
 	echo '<p>'.__('Publish this post to Facebook Wall?', 'wpbook').'<br/>';
 	echo '<input type="radio" name="wpbook_fb_publish" id="wpbook_fb_publish_yes" value="yes" ';
 	checked('yes', $wpbook_publish, true);
@@ -1431,6 +1452,7 @@ function wpbook_query_vars($vars) {
 //show facebook avatar as gravatar
 function wpbook_get_facebook_avatar($avatar, $comment, $size="50") {
 	$wpbookOptions = get_option('wpbookAdminOptions');
+	
       if (!empty($wpbookOptions)) {
         foreach ($wpbookOptions as $key => $option)
           $wpbookAdminOptions[$key] = $option;
